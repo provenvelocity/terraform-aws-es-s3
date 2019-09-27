@@ -31,45 +31,29 @@ locals {
   private_cidr_block = cidrsubnet(module.vpc.vpc_cidr_block, 1, 1)
 }
 
-module "public_subnets" {
-  source              = "git::https://github.com/cloudposse/terraform-aws-multi-az-subnets.git?ref=tags/0.3.0"
-  namespace           = var.namespace
-  stage               = var.stage
-  name                = var.name
-  availability_zones  = var.availability_zones
-  vpc_id              = module.vpc.vpc_id
-  igw_id              = module.vpc.igw_id
-  cidr_block          = local.public_cidr_block
-  type                = "public"
-  nat_gateway_enabled = "true"
-  tags = {
-    ManagedBy = "Terraform"
-  }
-}
-
-module "private_subnets" {
-  source             = "git::https://github.com/cloudposse/terraform-aws-multi-az-subnets.git?ref=tags/0.3.0"
-  namespace          = var.namespace
-  stage              = var.stage
-  name               = var.name
-  availability_zones = var.availability_zones
-  vpc_id             = module.vpc.vpc_id
-  cidr_block         = local.private_cidr_block
-  type               = "private"
-  az_ngw_ids         = module.public_subnets.az_ngw_ids
-  az_ngw_count       = 3
+module "subnets" {
+  source             = "git::https://github.com/cloudposse/terraform-aws-dynamic-subnets.git?ref=tags/0.16.0"
+  availability_zones   = var.availability_zones
+  namespace            = var.namespace
+  stage                = var.stage
+  name                 = var.name
+  vpc_id               = module.vpc.vpc_id
+  igw_id               = module.vpc.igw_id
+  cidr_block           = module.vpc.vpc_cidr_block
+  nat_gateway_enabled  = true
+  nat_instance_enabled = false
   tags = {
     ManagedBy = "Terraform"
   }
 }
 
 locals {
-  private_az_subnet_ids  = module.private_subnets.az_subnet_ids
-  public_az_subnet_ids = module.public_subnets.az_subnet_ids
+  private_az_subnet_ids  =  module.subnets.private_subnet_cidrs
+  public_az_subnet_ids =  module.subnets.public_subnet_cidrs
 }
 
 module "kms_key" {
-  source    = "git::https://github.com/cloudposse/terraform-aws-kms-key.git?ref=tags/0.2.0"
+  source     = "git::https://github.com/cloudposse/terraform-aws-kms-key.git?ref=tags/0.2.0"
   namespace = var.namespace
   stage     = var.stage
   name      = var.name
@@ -82,7 +66,7 @@ module "kms_key" {
   }
 }
 
-module "s3-bucket" {
+module "bucket" {
   source  = "git::https://github.com/cloudposse/terraform-aws-s3-bucket.git?ref=tags/0.5.0"
   enabled = "true"
 
@@ -134,7 +118,7 @@ data "aws_iam_policy_document" "base" {
   }
 }
 
-module "s3-role" {
+module "role" {
   source = "git::https://github.com/provenvelocity/terraform-aws-iam-role.git?ref=master"
 
   enabled   = "true"
@@ -142,7 +126,12 @@ module "s3-role" {
   stage     = var.stage
   name      = var.name
 
-  principals = {}
+  policy_description = "Allow S3 FullAccess"
+  role_description   = "IAM role with permissions to perform actions on S3 resources"
+
+  principals = {
+    AWS = ["arn:aws:iam::123456789012:role/workers"]
+  }
 
   policy_documents = [
     "${data.aws_iam_policy_document.resource_full_access.json}",
