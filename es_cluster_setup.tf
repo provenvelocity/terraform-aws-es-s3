@@ -14,16 +14,31 @@ module "vpc" {
   }
 }
 
-module "domain" {
-  source               = "git::https://github.com/cloudposse/terraform-aws-route53-cluster-zone.git?ref=tags/0.4.0"
-  namespace            = var.namespace
-  stage                = var.stage
-  name                 = var.name
-  parent_zone_name     = var.parent_zone_name
-  zone_name            = "$${name}.$${parent_zone_name}"
+resource "aws_route53_zone" "main" {
+  name = var.parent_zone_name
+}
+
+resource "aws_route53_zone" "dev" {
+  name = "$${var.environment}.$${var.parent_zone_name}"
+
   tags = {
     ManagedBy = "Terraform"
+    Environment = var.environment
   }
+}
+
+resource "aws_route53_record" "dev-ns" {
+  zone_id = "${aws_route53_zone.main.zone_id}"
+  name    = "$${var.environment}.$${var.parent_zone_name}"
+  type    = "NS"
+  ttl     = "30"
+
+  records = [
+    "${aws_route53_zone.dev.name_servers.0}",
+    "${aws_route53_zone.dev.name_servers.1}",
+    "${aws_route53_zone.dev.name_servers.2}",
+    "${aws_route53_zone.dev.name_servers.3}",
+  ]
 }
 
 locals {
@@ -44,6 +59,7 @@ module "subnets" {
   nat_instance_enabled = false
   tags = {
     ManagedBy = "Terraform"
+    Environment = var.environment
   }
 }
 
@@ -60,9 +76,10 @@ module "kms_key" {
   description             = "KMS key for $${var.name}"
   deletion_window_in_days = 10
   enable_key_rotation     = "true"
-  alias                   = "alias/$${var.name}"
+  alias                   = "alias/parameter_store_key"
   tags = {
     ManagedBy = "Terraform"
+    Environment = var.environment
   }
 }
 
@@ -76,6 +93,7 @@ module "bucket" {
 
   tags = {
     ManagedBy = "Terraform"
+    Environment = var.environment
   }
 
   versioning_enabled = "false"
@@ -130,13 +148,16 @@ module "role" {
   role_description   = "IAM role with permissions to perform actions on S3 resources"
 
   principals = {
-    AWS = ["arn:aws:iam::123456789012:role/workers"]
+    AWS = "arn:aws:iam::123456789012:role/workers"
   }
 
-  policy_documents = [
-    "${data.aws_iam_policy_document.resource_full_access.json}",
-    "${data.aws_iam_policy_document.base.json}",
-  ]
+  policy_documents = [data.aws_iam_policy_document.resource_full_access.json,
+    data.aws_iam_policy_document.base.json]
+
+  tags = {
+    ManagedBy = "Terraform"
+    Environment = var.environment
+  }
 }
 
 # module "elasticsearch" {

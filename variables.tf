@@ -22,6 +22,12 @@ variable "delimiter" {
   description = "Delimiter to be used between `namespace`, `stage`, `name` and `attributes`"
 }
 
+variable "environment" {
+  type        = string
+  description = "Environment Name  (e.g. `app-dev` or `cluster-test`)"
+  default     = "$${var.name}$${var.delimiter}$${var.stage}"
+}
+
 variable "attributes" {
   type        = list(string)
   default     = []
@@ -57,6 +63,6 @@ variable "cidr_block" {
 variable "parent_zone_name" {
   type        = string
   description = "Parent zone name"
-  default     = "provenvelocity.com"
+  default     = "sironamedical.com"
 }
 
