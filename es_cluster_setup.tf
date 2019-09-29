@@ -11,34 +11,8 @@ module "vpc" {
   cidr_block = var.cidr_block
   tags = {
     ManagedBy = "Terraform"
-  }
-}
-
-resource "aws_route53_zone" "main" {
-  name = var.parent_zone_name
-}
-
-resource "aws_route53_zone" "dev" {
-  name = "$${var.environment}.$${var.parent_zone_name}"
-
-  tags = {
-    ManagedBy = "Terraform"
     Environment = var.environment
   }
-}
-
-resource "aws_route53_record" "dev-ns" {
-  zone_id = "${aws_route53_zone.main.zone_id}"
-  name    = "$${var.environment}.$${var.parent_zone_name}"
-  type    = "NS"
-  ttl     = "30"
-
-  records = [
-    "${aws_route53_zone.dev.name_servers.0}",
-    "${aws_route53_zone.dev.name_servers.1}",
-    "${aws_route53_zone.dev.name_servers.2}",
-    "${aws_route53_zone.dev.name_servers.3}",
-  ]
 }
 
 locals {
@@ -68,12 +42,40 @@ locals {
   public_az_subnet_ids =  module.subnets.public_subnet_cidrs
 }
 
+resource "aws_route53_zone" "main" {
+  name = var.parent_zone_name
+  vpc_id = module.vpc.vpc_id
+}
+
+resource "aws_route53_zone" "dev" {
+  name = "${var.environment}.${var.parent_zone_name}"
+  vpc_id = module.vpc.vpc_id
+  tags = {
+    ManagedBy = "Terraform"
+    Environment = var.environment
+  }
+}
+
+resource "aws_route53_record" "dev-ns" {
+  zone_id = "${aws_route53_zone.main.zone_id}"
+  name    = "${var.environment}.${var.parent_zone_name}"
+  type    = "NS"
+  ttl     = "30"
+
+  records = [
+    "${aws_route53_zone.dev.name_servers.0}",
+    "${aws_route53_zone.dev.name_servers.1}",
+    "${aws_route53_zone.dev.name_servers.2}",
+    "${aws_route53_zone.dev.name_servers.3}",
+  ]
+}
+
 module "kms_key" {
   source     = "git::https://github.com/cloudposse/terraform-aws-kms-key.git?ref=tags/0.2.0"
   namespace = var.namespace
   stage     = var.stage
   name      = var.name
-  description             = "KMS key for $${var.name}"
+  description             = "KMS key for ${var.name}"
   deletion_window_in_days = 10
   enable_key_rotation     = "true"
   alias                   = "alias/parameter_store_key"
@@ -82,6 +84,8 @@ module "kms_key" {
     Environment = var.environment
   }
 }
+
+
 
 module "bucket" {
   source  = "git::https://github.com/cloudposse/terraform-aws-s3-bucket.git?ref=tags/0.5.0"
@@ -115,8 +119,6 @@ data "aws_iam_policy_document" "resource_full_access" {
       "s3:GetObject",
       "s3:DeleteObject",
       "s3:ListBucket",
-      "s3:ListBucketMultipartUploads",
-      "s3:GetBucketLocation",
       "s3:AbortMultipartUpload",
     ]
   }
@@ -136,6 +138,8 @@ data "aws_iam_policy_document" "base" {
   }
 }
 
+data "aws_organizations_organization" "org" {}
+
 module "role" {
   source = "git::https://github.com/provenvelocity/terraform-aws-iam-role.git?ref=master"
 
@@ -148,7 +152,7 @@ module "role" {
   role_description   = "IAM role with permissions to perform actions on S3 resources"
 
   principals = {
-    AWS = "arn:aws:iam::123456789012:role/workers"
+    AWS = "arn:aws:iam::681100878889:role/OrganizationAccountAccessRole"
   }
 
   policy_documents = [data.aws_iam_policy_document.resource_full_access.json,
@@ -160,25 +164,26 @@ module "role" {
   }
 }
 
-# module "elasticsearch" {
-#   source                  = "git::https://github.com/cloudposse/terraform-aws-elasticsearch.git?ref=tags/0.5.0"
-#   namespace               = var.namespace
-#   stage                   = var.stage
-#   name                    = var.name
-#   dns_zone_id             = module.domain.zone_id
-#   security_groups         = [module.vpc.vpc_default_security_group_id]
-#   vpc_id                  = module.vpc.vpc_id
-#   subnet_ids              = private_az_subnet_ids
-#   zone_awareness_enabled  = "true"
-#   elasticsearch_version   = "6.5"
-#   instance_type           = "t2.small.elasticsearch"
-#   instance_count          = 4
-#   iam_role_arns           = ["arn:aws:iam::XXXXXXXXX:role/ops", "arn:aws:iam::XXXXXXXXX:role/dev"]
-#   iam_actions             = ["es:ESHttpGet", "es:ESHttpPut", "es:ESHttpPost"]
-#   encrypt_at_rest_enabled = true
-#   kibana_subdomain_name   = "kibana"
-#   advanced_options {
-#     "rest.action.multi.allow_explicit_index" = "true"
-#   }
-# }
+module "elasticsearch" {
+  source                  = "git::https://github.com/cloudposse/terraform-aws-elasticsearch.git?ref=tags/0.5.0"
+  namespace               = var.namespace
+  stage                   = var.stage
+  name                    = var.name
+  dns_zone_id             = aws_route53_zone.dev.zone_id
+  enabled                 = true
+  security_groups         = [module.vpc.vpc_default_security_group_id]
+  vpc_id                  = module.vpc.vpc_id
+  subnet_ids              = local.private_az_subnet_ids
+  zone_awareness_enabled  = "true"
+  elasticsearch_version   = "6.5"
+  instance_type           = "t2.small.elasticsearch"
+  instance_count          = 4
+  iam_role_arns           = ["arn:aws:iam::681100878889:role/OrganizationAccountAccessRole"]
+  iam_actions             = ["es:ESHttpGet", "es:ESHttpPut", "es:ESHttpPost"]
+  encrypt_at_rest_enabled = true
+  kibana_subdomain_name   = "${var.namespace}-kibana-${var.stage}"
+  advanced_options = {
+    "rest.action.multi.allow_explicit_index" = true
+  }
+}
 

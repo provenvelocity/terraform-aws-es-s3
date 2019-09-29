@@ -1,7 +1,7 @@
 variable "namespace" {
   type        = string
   description = "Namespace (e.g. `eg` or `cp`)"
-  default     = "eg"
+  default     = "hw"
 }
 
 variable "stage" {
@@ -13,7 +13,7 @@ variable "stage" {
 variable "name" {
   type        = string
   description = "Name  (e.g. `app` or `cluster`)"
-  default     = "es"
+  default     = "es-cluster"
 }
 
 variable "delimiter" {
@@ -25,7 +25,7 @@ variable "delimiter" {
 variable "environment" {
   type        = string
   description = "Environment Name  (e.g. `app-dev` or `cluster-test`)"
-  default     = "$${var.name}$${var.delimiter}$${var.stage}"
+  default     = "es-cluster-dev"
 }
 
 variable "attributes" {
