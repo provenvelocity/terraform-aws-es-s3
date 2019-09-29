@@ -38,18 +38,24 @@ module "subnets" {
 }
 
 locals {
-  private_az_subnet_ids  =  module.subnets.private_subnet_cidrs
-  public_az_subnet_ids =  module.subnets.public_subnet_cidrs
+  private_az_subnet_ids  =  module.subnets.private_subnet_ids
+  public_az_subnet_ids =  module.subnets.public_subnet_ids
 }
 
 resource "aws_route53_zone" "main" {
   name = var.parent_zone_name
-  vpc_id = module.vpc.vpc_id
+  vpc {
+    vpc_id = module.vpc.vpc_id
+  }
+  tags = {
+    ManagedBy = "Terraform"
+    Environment = var.environment
+  }
 }
 
 resource "aws_route53_zone" "dev" {
   name = "${var.environment}.${var.parent_zone_name}"
-  vpc_id = module.vpc.vpc_id
+
   tags = {
     ManagedBy = "Terraform"
     Environment = var.environment
@@ -165,25 +171,35 @@ module "role" {
 }
 
 module "elasticsearch" {
-  source                  = "git::https://github.com/cloudposse/terraform-aws-elasticsearch.git?ref=tags/0.5.0"
+  source                  = "git::https://github.com/provenvelocity/terraform-aws-elasticsearch.git?ref=master"
   namespace               = var.namespace
   stage                   = var.stage
   name                    = var.name
   dns_zone_id             = aws_route53_zone.dev.zone_id
-  enabled                 = true
   security_groups         = [module.vpc.vpc_default_security_group_id]
   vpc_id                  = module.vpc.vpc_id
   subnet_ids              = local.private_az_subnet_ids
-  zone_awareness_enabled  = "true"
+  zone_awareness_enabled  = true
   elasticsearch_version   = "6.5"
   instance_type           = "t2.small.elasticsearch"
   instance_count          = 4
   iam_role_arns           = ["arn:aws:iam::681100878889:role/OrganizationAccountAccessRole"]
   iam_actions             = ["es:ESHttpGet", "es:ESHttpPut", "es:ESHttpPost"]
-  encrypt_at_rest_enabled = true
+  encrypt_at_rest_enabled = false
+  ebs_volume_size = 10
+  create_iam_service_linked_role = true
+  dedicated_master_enabled = false
   kibana_subdomain_name   = "${var.namespace}-kibana-${var.stage}"
   advanced_options = {
     "rest.action.multi.allow_explicit_index" = true
   }
 }
+
+
+
+
+
+
+
+
 
