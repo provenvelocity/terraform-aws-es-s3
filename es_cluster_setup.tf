@@ -168,10 +168,6 @@ data "aws_iam_policy_document" "base" {
   }
 }
 
-output "account_ids" {
-  value = data.aws_organizations_organization.org.accounts[*].id
-}
-
 module "role" {
   source = "git::https://github.com/provenvelocity/terraform-aws-iam-role.git?ref=master"
 
