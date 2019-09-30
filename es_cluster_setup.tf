@@ -30,7 +30,7 @@ module "subnets" {
   igw_id               = module.vpc.igw_id
   cidr_block           = module.vpc.vpc_cidr_block
   nat_gateway_enabled  = true
-  nat_instance_enabled = false
+  nat_instance_enabled = true
   tags = {
     ManagedBy = "Terraform"
     Environment = var.environment
@@ -40,10 +40,11 @@ module "subnets" {
 locals {
   private_az_subnet_ids  =  module.subnets.private_subnet_ids
   public_az_subnet_ids =  module.subnets.public_subnet_ids
+  subdomain = "${var.subdomain}.${var.parent_zone_name}"
 }
 
-resource "aws_route53_zone" "main" {
-  name = var.parent_zone_name
+resource "aws_route53_zone" "dev" {
+  name = local.subdomain
   vpc {
     vpc_id = module.vpc.vpc_id
   }
@@ -53,8 +54,13 @@ resource "aws_route53_zone" "main" {
   }
 }
 
-resource "aws_route53_zone" "dev" {
-  name = "${var.environment}.${var.parent_zone_name}"
+data "aws_acm_certificate" "cert" {
+  domain   = "vpn.provenvelocity.com"
+  statuses = ["ISSUED"]
+}
+
+resource "aws_cloudwatch_log_group" "es-lg" {
+  name = var.name
 
   tags = {
     ManagedBy = "Terraform"
@@ -62,18 +68,38 @@ resource "aws_route53_zone" "dev" {
   }
 }
 
-resource "aws_route53_record" "dev-ns" {
-  zone_id = "${aws_route53_zone.main.zone_id}"
-  name    = "${var.environment}.${var.parent_zone_name}"
-  type    = "NS"
-  ttl     = "30"
 
-  records = [
-    "${aws_route53_zone.dev.name_servers.0}",
-    "${aws_route53_zone.dev.name_servers.1}",
-    "${aws_route53_zone.dev.name_servers.2}",
-    "${aws_route53_zone.dev.name_servers.3}",
-  ]
+resource "aws_cloudwatch_log_stream" "es-ls" {
+  name           = "${var.name}-logstream"
+  log_group_name = aws_cloudwatch_log_group.es-lg.name
+}
+
+resource "aws_ec2_client_vpn_endpoint" "es" {
+  description            = "es-clientvpn"
+  server_certificate_arn = data.aws_acm_certificate.cert.arn
+  client_cidr_block      = "172.17.0.0/16"
+
+  authentication_options {
+    type                       = "certificate-authentication"
+    root_certificate_chain_arn = data.aws_acm_certificate.cert.arn
+  }
+
+  connection_log_options {
+    enabled               = true
+    cloudwatch_log_group  = aws_cloudwatch_log_group.es-lg.name
+    cloudwatch_log_stream = aws_cloudwatch_log_stream.es-ls.name
+  }
+
+  tags = {
+    ManagedBy = "Terraform"
+    Environment = var.environment
+  }
+}
+
+resource "aws_ec2_client_vpn_network_association" "es" {
+  count = length(local.private_az_subnet_ids)
+  client_vpn_endpoint_id = aws_ec2_client_vpn_endpoint.es.id
+  subnet_id              = local.private_az_subnet_ids[count.index]
 }
 
 module "kms_key" {
@@ -90,8 +116,6 @@ module "kms_key" {
     Environment = var.environment
   }
 }
-
-
 
 module "bucket" {
   source  = "git::https://github.com/cloudposse/terraform-aws-s3-bucket.git?ref=tags/0.5.0"
@@ -144,7 +168,9 @@ data "aws_iam_policy_document" "base" {
   }
 }
 
-data "aws_organizations_organization" "org" {}
+output "account_ids" {
+  value = data.aws_organizations_organization.org.accounts[*].id
+}
 
 module "role" {
   source = "git::https://github.com/provenvelocity/terraform-aws-iam-role.git?ref=master"
@@ -170,13 +196,29 @@ module "role" {
   }
 }
 
+resource "aws_security_group" "es" {
+  name        = "${var.name}-${var.stage}"
+  description = "Managed by Terraform"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    from_port = 443
+    to_port   = 443
+    protocol  = "tcp"
+
+    cidr_blocks = [
+      local.private_cidr_block
+    ]
+  }
+}
+
 module "elasticsearch" {
   source                  = "git::https://github.com/provenvelocity/terraform-aws-elasticsearch.git?ref=master"
   namespace               = var.namespace
   stage                   = var.stage
-  name                    = var.name
+  name                    = "elastic"
   dns_zone_id             = aws_route53_zone.dev.zone_id
-  security_groups         = [module.vpc.vpc_default_security_group_id]
+  security_groups         = [aws_security_group.es.id]
   vpc_id                  = module.vpc.vpc_id
   subnet_ids              = local.private_az_subnet_ids
   zone_awareness_enabled  = true
@@ -189,7 +231,7 @@ module "elasticsearch" {
   ebs_volume_size = 10
   create_iam_service_linked_role = true
   dedicated_master_enabled = false
-  kibana_subdomain_name   = "${var.namespace}-kibana-${var.stage}"
+  kibana_subdomain_name   = "kibana"
   advanced_options = {
     "rest.action.multi.allow_explicit_index" = true
   }

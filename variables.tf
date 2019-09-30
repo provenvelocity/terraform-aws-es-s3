@@ -28,6 +28,12 @@ variable "environment" {
   default     = "es-cluster-dev"
 }
 
+variable "subdomain" {
+  type        = string
+  description = "Subdomain Name  (e.g. `dev` or `insternal`)"
+  default     = "dev"
+}
+
 variable "attributes" {
   type        = list(string)
   default     = []
@@ -43,13 +49,13 @@ variable "tags" {
 
 variable "region" {
   type        = string
-  default     = "us-west-1"
+  default     = "us-west-2"
   description = "If specified, the AWS region this bucket should reside in. Otherwise, the region used by the callee"
 }
 
 variable "availability_zones" {
   type        = "list"
-  default     = ["us-west-1b", "us-west-1c"]
+  default     = ["us-west-2b", "us-west-2c"]
   description = "List of Availability Zones (e.g. `['us-east-1a', 'us-east-1b', 'us-east-1c']`)"
 }
 
@@ -63,6 +69,6 @@ variable "cidr_block" {
 variable "parent_zone_name" {
   type        = string
   description = "Parent zone name"
-  default     = "sironamedical.com"
+  default     = "provenvelocity.com"
 }
 
