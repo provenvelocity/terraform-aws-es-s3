@@ -13,25 +13,13 @@ variable "stage" {
 variable "name" {
   type        = string
   description = "Name  (e.g. `app` or `cluster`)"
-  default     = "es-cluster"
+  default     = "elastic"
 }
 
 variable "delimiter" {
   type        = string
   default     = "-"
   description = "Delimiter to be used between `namespace`, `stage`, `name` and `attributes`"
-}
-
-variable "environment" {
-  type        = string
-  description = "Environment Name  (e.g. `app-dev` or `cluster-test`)"
-  default     = "es-cluster-dev"
-}
-
-variable "subdomain" {
-  type        = string
-  description = "Subdomain Name  (e.g. `dev` or `insternal`)"
-  default     = "dev"
 }
 
 variable "attributes" {
@@ -42,7 +30,9 @@ variable "attributes" {
 
 variable "tags" {
   type        = map(string)
-  default     = {}
+  default     = {
+    ManagedBy = "Terraform"
+  }
   description = "Additional tags (e.g. `{ BusinessUnit = \"XYZ\" }`"
 }
 
@@ -69,6 +59,16 @@ variable "cidr_block" {
 variable "parent_zone_name" {
   type        = string
   description = "Parent zone name"
-  default     = "provenvelocity.com"
+  default     = "sirona-homework.com"
 }
 
+variable "public_key_path" {
+  type        = string
+  description = "key file path"
+  default     = "/Users/joshuaschipper/.ssh/ec2.pub"
+}
+variable "key_name" {
+    type        = string
+  description = "key file name"
+  default     = "schipper_ec2_key"
+}
